@@ -1,0 +1,26 @@
+# 构建产物
+build/
+build_all/
+*.o
+*.obj
+*.a
+*.lib
+*.dll
+*.pdb
+*.ilk
+*.exp
+moc_*
+qrc_*
+ui_*.h
+Makefile
+Makefile.*
+.qmake.stash
+*.pro.user
+*.pro.user.*
+
+# 编辑器 / 系统
+.vs/
+.vscode/
+*.swp
+Thumbs.db
+Desktop.ini

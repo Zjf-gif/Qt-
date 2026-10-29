@@ -1,0 +1,12 @@
+{
+    \"Name\" : \"AiAssistant\",
+    \"Version\" : \"$$QTCREATOR_VERSION\",
+    \"CompatVersion\" : \"$$QTCREATOR_COMPAT_VERSION\",
+    \"Vendor\" : \"QT Plugin Project\",
+    \"Copyright\" : \"(C) 2024-2026 QT Plugin Project\",
+    \"License\" : \"GNU General Public License v3 with Qt Company Exception\",
+    \"Category\" : \"Utilities\",
+    \"Description\" : \"AI assistant plugin: an AI agent docked in a side panel. LLM client (Ollama / DeepSeek / any OpenAI-compatible endpoint) with streaming tool calls. Every modifying operation (UI, code, project, build, run) requires explicit human approval in a modal dialog; read-only tools run directly.\",
+    \"Url\" : \"https://example.invalid/aiassistant\",
+    $$dependencyList
+}
