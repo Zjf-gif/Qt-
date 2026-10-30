@@ -16,6 +16,7 @@
 
 class QAction;
 class QDockWidget;
+class QShortcut;
 
 namespace AiAssistant {
 struct AgentSettings;
@@ -77,6 +78,10 @@ private:
     AiAssistant::ApprovalDecision presentApproval(const AiAssistant::ApprovalRequest &request);
 
     void showDock();
+    void ensureDockVisible();
+    void installShortcutGuard();
+    void triggerRefactor();
+    void triggerDesigner();
     void takeManualSnapshot();
     void showRollbackDialog();
     void openSettings();
@@ -106,6 +111,8 @@ private:
 
     AiAssistant::AiChatDock *m_dock = nullptr;
     QPointer<QDockWidget> m_dockWidget;
+    // 兜底的快捷键拦截器（不依赖 Creator 的 Command 快捷键绑定）
+    QObject *m_shortcutGuard = nullptr;
     QAction *m_showAction = nullptr;
     QAction *m_refactorAction = nullptr;
     QAction *m_designerAction = nullptr;

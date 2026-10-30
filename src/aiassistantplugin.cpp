@@ -33,6 +33,7 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QDateTime>
 #include <QDockWidget>
 #include <QFile>
 #include <QFileInfo>
@@ -44,10 +45,101 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QSettings>
+#include <QKeyEvent>
+#include <QShortcut>
+#include <QStandardPaths>
+#include <QTextStream>
+#include <QTimer>
 
 #include <algorithm>
+#include <functional>
 
 using namespace AiAssistant;
+
+// ---------------------------------------------------------------------------
+// 快捷键兜底：直接监听应用的按键事件
+//
+// Creator 的 Command 快捷键绑定依赖它的 ActionManager 设置同步，实测我们的
+// Command 拿不到键；而再挂一个 QShortcut 又可能和 QAction 撞成
+// "Ambiguous shortcut overload"（两边都失效）。所以在 qApp 上装事件过滤器，
+// 抢在快捷键分发之前拦下组合键，直接调用对应处理函数。
+//
+// 键位说明：
+//   Ctrl+Shift+A       唤出面板（避开截图工具的 Ctrl+Alt+A）
+//   Ctrl+Alt+Shift+R   让 AI 重构选中代码（Ctrl+Shift+R 被 Creator 的"重命名符号"占用）
+//   Ctrl+Alt+Shift+D   让 AI 操作选中控件（Ctrl+Shift+D 被 Creator 的"函数提示"占用）
+// ---------------------------------------------------------------------------
+namespace {
+
+class ShortcutGuard : public QObject
+{
+public:
+    enum class Trigger { ShowDock, RefactorSelection, DesignerWidget };
+
+    explicit ShortcutGuard(std::function<void(Trigger)> callback, QObject *parent = nullptr)
+        : QObject(parent), m_callback(std::move(callback))
+    {
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        Q_UNUSED(watched)
+        if (event->type() != QEvent::KeyPress)
+            return QObject::eventFilter(watched, event);
+
+        auto *keyEvent = static_cast<QKeyEvent *>(event);
+        const Qt::KeyboardModifiers mods = keyEvent->modifiers();
+        const bool ctrl = mods.testFlag(Qt::ControlModifier);
+        const bool alt = mods.testFlag(Qt::AltModifier);
+        const bool shift = mods.testFlag(Qt::ShiftModifier);
+        const bool meta = mods.testFlag(Qt::MetaModifier);
+
+        if (meta)
+            return QObject::eventFilter(watched, event);
+
+        Trigger trigger;
+        bool matched = false;
+        if (ctrl && shift && !alt && keyEvent->key() == Qt::Key_A) {
+            trigger = Trigger::ShowDock;
+            matched = true;
+        } else if (ctrl && alt && shift && keyEvent->key() == Qt::Key_R) {
+            trigger = Trigger::RefactorSelection;
+            matched = true;
+        } else if (ctrl && alt && shift && keyEvent->key() == Qt::Key_D) {
+            trigger = Trigger::DesignerWidget;
+            matched = true;
+        }
+
+        if (!matched)
+            return QObject::eventFilter(watched, event);
+
+        if (m_callback)
+            m_callback(trigger);
+        return true;   // 已处理，避免再触发 QAction 造成重复
+    }
+
+private:
+    std::function<void(Trigger)> m_callback;
+};
+
+} // namespace
+
+// ---------------------------------------------------------------------------
+// 诊断日志：写到临时目录，方便排查"插件没被加载 / Dock 不显示"这类问题
+// ---------------------------------------------------------------------------
+static void diagLog(const QString &message)
+{
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+    if (dir.isEmpty())
+        return;
+    QFile file(dir + QStringLiteral("/aiassistant-diag.log"));
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
+        return;
+    QTextStream stream(&file);
+    stream << QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"))
+           << QStringLiteral("  ") << message << QLatin1Char('\n');
+}
 
 // ---------------------------------------------------------------------------
 
@@ -80,6 +172,8 @@ bool AiAssistantPlugin::initialize(const QStringList &arguments, QString *errorS
 {
     Q_UNUSED(arguments)
     Q_UNUSED(errorString)
+
+    diagLog(QStringLiteral("initialize(): 开始初始化"));
 
     AiAssistant::registerMetaTypes();
 
@@ -253,17 +347,95 @@ void AiAssistantPlugin::setupConnections()
 
 void AiAssistantPlugin::extensionsInitialized()
 {
-    QMainWindow *mainWindow = Core::ICore::mainWindow();
-    if (!mainWindow || !m_dock)
-        return;
+    diagLog(QStringLiteral("extensionsInitialized(): 开始"));
 
-    m_dockWidget = new QDockWidget(tr("AI 助手"), mainWindow);
-    m_dockWidget->setObjectName(QLatin1String(AiAssistant::Constants::AI_DOCK_ID));
-    m_dockWidget->setWidget(m_dock);
-    m_dockWidget->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-    mainWindow->addDockWidget(Qt::RightDockWidgetArea, m_dockWidget);
+    // 创建（或找回）Dock 并确保它显示出来
+    ensureDockVisible();
+
+    // Creator 会在插件初始化之后恢复保存的窗口布局，可能把 Dock 再次隐藏/浮空。
+    // 因此等布局恢复完，再强制校正一次。
+    QTimer::singleShot(0, this, [this] { ensureDockVisible(); });
+    QTimer::singleShot(1500, this, [this] {
+        ensureDockVisible();
+        installShortcutGuard();
+    });
 
     updateDockInfo();
+}
+
+void AiAssistantPlugin::ensureDockVisible()
+{
+    QMainWindow *mainWindow = Core::ICore::mainWindow();
+    if (!mainWindow || !m_dock) {
+        diagLog(QStringLiteral("ensureDockVisible(): mainWindow=%1 dock=%2")
+                    .arg(mainWindow != nullptr)
+                    .arg(m_dock != nullptr));
+        return;
+    }
+
+    if (!m_dockWidget) {
+        m_dockWidget = new QDockWidget(tr("AI 助手"), mainWindow);
+        m_dockWidget->setObjectName(QLatin1String(AiAssistant::Constants::AI_DOCK_ID));
+        m_dockWidget->setWidget(m_dock);
+        m_dockWidget->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+        m_dockWidget->setMinimumWidth(320);
+        mainWindow->addDockWidget(Qt::RightDockWidgetArea, m_dockWidget);
+        diagLog(QStringLiteral("ensureDockVisible(): 新建 Dock 并加入右侧"));
+    } else {
+        // 布局恢复后可能变成浮动窗口或掉出布局，这里统一纠正为右侧停靠
+        if (m_dockWidget->isFloating())
+            m_dockWidget->setFloating(false);
+        if (mainWindow->dockWidgetArea(m_dockWidget.data()) == Qt::NoDockWidgetArea)
+            mainWindow->addDockWidget(Qt::RightDockWidgetArea, m_dockWidget.data());
+    }
+
+    m_dockWidget->setVisible(true);
+    m_dockWidget->show();
+    m_dockWidget->raise();
+
+    // 关键：Creator 恢复布局后可能把 Dock 宽度压成 0（界面上"什么都没有"），
+    // 这里在布局稳定后强制给一个可读宽度。
+    QTimer::singleShot(0, this, [this] {
+        if (!m_dockWidget)
+            return;
+        QMainWindow *window = Core::ICore::mainWindow();
+        if (!window)
+            return;
+        if (m_dockWidget->width() < 300) {
+            window->resizeDocks({m_dockWidget.data()}, {400}, Qt::Horizontal);
+            diagLog(QStringLiteral("ensureDockVisible(): 宽度过窄(%1)，已撑开到 400")
+                        .arg(m_dockWidget->width()));
+        }
+    });
+
+    diagLog(QStringLiteral("ensureDockVisible(): isVisible=%1 floating=%2 area=%3 width=%4")
+                .arg(m_dockWidget->isVisible())
+                .arg(m_dockWidget->isFloating())
+                .arg(int(mainWindow->dockWidgetArea(m_dockWidget.data())))
+                .arg(m_dockWidget->width()));
+}
+
+void AiAssistantPlugin::installShortcutGuard()
+{
+    if (m_shortcutGuard || !qApp)
+        return;
+
+    m_shortcutGuard = new ShortcutGuard([this](ShortcutGuard::Trigger trigger) {
+        switch (trigger) {
+        case ShortcutGuard::Trigger::ShowDock:
+            showDock();
+            break;
+        case ShortcutGuard::Trigger::RefactorSelection:
+            triggerRefactor();
+            break;
+        case ShortcutGuard::Trigger::DesignerWidget:
+            triggerDesigner();
+            break;
+        }
+    }, qApp);
+    qApp->installEventFilter(m_shortcutGuard);
+
+    diagLog(QStringLiteral("installShortcutGuard(): 已安装（Ctrl+Shift+A / Ctrl+Alt+Shift+R / Ctrl+Alt+Shift+D）"));
 }
 
 ExtensionSystem::IPlugin::ShutdownFlag AiAssistantPlugin::aboutToShutdown()
@@ -302,26 +474,34 @@ void AiAssistantPlugin::setupActions()
     Core::Command *showCommand = actionManager->registerAction(
         m_showAction, AiAssistant::Constants::SHOW_DOCK_ACTION, context);
     if (showCommand)
-        showCommand->setDefaultKeySequence(QKeySequence(tr("Ctrl+Alt+A")));
+        showCommand->setDefaultKeySequence(QKeySequence(QStringLiteral("Ctrl+Shift+A")));
+    // Creator 的 Command 只在"用户从未自定义过"时才把默认快捷键真正绑到 QAction 上，
+    // 实测这里的 QAction 拿不到快捷键，所以直接显式绑定
+    m_showAction->setShortcuts(QList<QKeySequence>() << QKeySequence(QStringLiteral("Ctrl+Shift+A")));
+    m_showAction->setShortcutContext(Qt::ApplicationShortcut);
+    diagLog(QStringLiteral("setupActions(): AI 助手面板 快捷键=[%1] enabled=%2")
+                .arg(m_showAction->shortcut().toString())
+                .arg(m_showAction->isEnabled()));
     connect(m_showAction, &QAction::triggered, this, &AiAssistantPlugin::showDock);
 
     m_refactorAction = new QAction(tr("让AI重构选中代码"), this);
     Core::Command *refactorCommand = actionManager->registerAction(
         m_refactorAction, AiAssistant::Constants::REFACTOR_ACTION, context);
     if (refactorCommand)
-        refactorCommand->setDefaultKeySequence(QKeySequence(tr("Ctrl+Alt+R")));
-    connect(m_refactorAction, &QAction::triggered, this, [this] {
-        if (!m_projectService)
-            return;
-        handleRefactorRequest(m_projectService->currentEditorFilePath(),
-                              m_projectService->currentEditorSelection());
-    });
+        refactorCommand->setDefaultKeySequence(QKeySequence(QStringLiteral("Ctrl+Alt+Shift+R")));
+    m_refactorAction->setShortcuts(QList<QKeySequence>()
+                                   << QKeySequence(QStringLiteral("Ctrl+Alt+Shift+R")));
+    m_refactorAction->setShortcutContext(Qt::ApplicationShortcut);
+    connect(m_refactorAction, &QAction::triggered, this, &AiAssistantPlugin::triggerRefactor);
 
     m_designerAction = new QAction(tr("让AI操作当前选中控件"), this);
     Core::Command *designerCommand = actionManager->registerAction(
         m_designerAction, AiAssistant::Constants::DESIGNER_ACTION, context);
     if (designerCommand)
-        designerCommand->setDefaultKeySequence(QKeySequence(tr("Ctrl+Alt+D")));
+        designerCommand->setDefaultKeySequence(QKeySequence(QStringLiteral("Ctrl+Alt+Shift+D")));
+    m_designerAction->setShortcuts(QList<QKeySequence>()
+                                   << QKeySequence(QStringLiteral("Ctrl+Alt+Shift+D")));
+    m_designerAction->setShortcutContext(Qt::ApplicationShortcut);
     connect(m_designerAction, &QAction::triggered, this, [this] {
         if (!m_designerBridge)
             return;
@@ -329,6 +509,23 @@ void AiAssistantPlugin::setupActions()
         handleDesignerRequest(m_designerBridge->currentUiFile(),
                               info.value(QStringLiteral("objectName")).toString());
     });
+}
+
+void AiAssistantPlugin::triggerRefactor()
+{
+    if (!m_projectService)
+        return;
+    handleRefactorRequest(m_projectService->currentEditorFilePath(),
+                          m_projectService->currentEditorSelection());
+}
+
+void AiAssistantPlugin::triggerDesigner()
+{
+    if (!m_designerBridge)
+        return;
+    const QJsonObject info = m_designerBridge->selectedWidget();
+    handleDesignerRequest(m_designerBridge->currentUiFile(),
+                          info.value(QStringLiteral("objectName")).toString());
 }
 
 void AiAssistantPlugin::setupMenus()
@@ -415,18 +612,8 @@ void AiAssistantPlugin::openSettings()
 // ---------------------------------------------------------------------------
 void AiAssistantPlugin::showDock()
 {
-    QMainWindow *mainWindow = Core::ICore::mainWindow();
-    if (!m_dockWidget && mainWindow && m_dock) {
-        m_dockWidget = new QDockWidget(tr("AI 助手"), mainWindow);
-        m_dockWidget->setObjectName(QLatin1String(AiAssistant::Constants::AI_DOCK_ID));
-        m_dockWidget->setWidget(m_dock);
-        m_dockWidget->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-        mainWindow->addDockWidget(Qt::RightDockWidgetArea, m_dockWidget);
-    }
-    if (m_dockWidget) {
-        m_dockWidget->show();
-        m_dockWidget->raise();
-    }
+    diagLog(QStringLiteral("showDock(): 触发"));
+    ensureDockVisible();
     if (m_dock)
         m_dock->focusInput();
 }

@@ -38,7 +38,7 @@
 
 ## 验收 3 · 拖拽语义：`ui_move_widget` → xml rect 变更 → Designer 位置变化
 
-1. 在 Designer 画布选中 `btnAiTest`，右键 → **让AI操作当前选中控件**（或 `Ctrl+Alt+D`）。
+1. 在 Designer 画布选中 `btnAiTest`，右键 → **让AI操作当前选中控件**（或 `Ctrl+Alt+Shift+D`）。
 2. 输入：`把它移动到 (300, 200)`。
 3. 期望：
    * 审批弹窗的 diff 显示 `x/y` 变化（`20,20` → `300,200`）；
@@ -111,7 +111,7 @@ Select-String -Path src\ui\settingsdialog.cpp -Pattern "审批"
 
 1. **右键菜单**：编辑器选中一段代码 → 右键应出现「让AI重构选中代码（N 个字符）」；
    Designer 画布右键应出现「让AI操作控件 xxx」。若某平台拿不到弹出菜单，
-   Tools 菜单里的等价命令（`Ctrl+Alt+R` / `Ctrl+Alt+D`）必须可用。
+   Tools 菜单里的等价命令（`Ctrl+Alt+Shift+R` / `Ctrl+Alt+Shift+D`）必须可用。
 2. **批量合并**：让模型一次做两件事（“把按钮移到右下角，并把文字改成登录”），
    应当只弹**一次**审批，两个页签。
 3. **修改后执行**：审批时把 `text` 改成别的字符串 → 点「修改指令后执行」→ 写入的是你改后的值，

@@ -1,23 +1,32 @@
 /****************************************************************************
-** AI 对话 Dock 面板
+** AI 对话 Dock 面板（左右气泡式）
 **
-** 消息流区分：用户消息 / AI 回复（含流式）/ 工具日志 / 审批记录 / 错误。
-** 按钮：停止Agent、手动快照、回滚、刷新项目上下文、打开设置、清空对话。
+** 布局：
+**   AI 消息   → 左对齐，浅色气泡
+**   用户消息 → 右对齐，主题色气泡
+**   工具日志 / 审批 / 系统提示 → 居中小字
+**
+** 输入区：多行输入框（自动换行、随内容长高），Enter 发送，
+**         Ctrl+Enter / Shift+Enter 手动换行。
 ****************************************************************************/
 
 #pragma once
 
 #include "core/agenttypes.h"
 
-#include <QTextCursor>
+#include <QPointer>
+#include <QVector>
 #include <QWidget>
 
 class QLabel;
-class QLineEdit;
 class QPushButton;
-class QTextEdit;
+class QScrollArea;
+class QVBoxLayout;
 
 namespace AiAssistant {
+
+class ChatInput;
+class CodeBlockWidget;
 
 class AiChatDock : public QWidget
 {
@@ -52,15 +61,42 @@ signals:
     void settingsRequested();
     void clearHistoryRequested();
 
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+
 private:
-    void appendLine(const QString &prefix, const QString &text, const QColor &color,
-                    bool italic = false, bool monospace = false);
+    enum class BubbleKind { Assistant, User };
+
+    // 在末尾插入一行控件（保持底部弹性空白）
+    void appendRow(QWidget *row);
+    // 创建一个气泡行（左/右对齐）
+    QWidget *createBubbleRow(BubbleKind kind, const QString &html, QLabel **outLabel = nullptr);
+    // 居中小字行（工具日志 / 审批 / 错误 / 系统提示）
+    void appendNotice(const QString &text, const QString &level);
+    // 代码卡片行（左对齐，宽度铺满）
+    QWidget *createCodeRow(const QString &language, const QString &code,
+                           AiAssistant::CodeBlockWidget **outCard = nullptr);
+    // 把 AI 回复按"文本 / 代码"分段渲染
+    void appendAssistantContent(const QString &rawText);
+    // 流式渲染：复用已有控件，避免闪烁
+    void renderStreamSegments();
+    void scrollToBottom();
+    void updateBubbleWidths();
+    void fitBubble(QLabel *label);
+    int bubbleMaxWidth() const;
+    void clearRows();
+
     void submitInput();
     void updateButtons();
     void updateInfoLabel();
 
-    QTextEdit *m_view = nullptr;
-    QLineEdit *m_input = nullptr;
+    QScrollArea *m_scroll = nullptr;
+    QWidget *m_bubbleHost = nullptr;
+    QVBoxLayout *m_bubbleLayout = nullptr;
+    // 最后一个气泡行，用于滚动定位（比直接设 scroll 最大值可靠）
+    QPointer<QWidget> m_lastRow;
+
+    ChatInput *m_input = nullptr;
     QPushButton *m_sendButton = nullptr;
     QPushButton *m_stopButton = nullptr;
     QPushButton *m_snapshotButton = nullptr;
@@ -71,8 +107,14 @@ private:
     QLabel *m_stateLabel = nullptr;
     QLabel *m_infoLabel = nullptr;
 
-    QTextCursor m_streamCursor;
+    // 流式输出
+    QLabel *m_streamLabel = nullptr;
+    QString m_streamRaw;
     bool m_streaming = false;
+    // 流式过程中已渲染的分段控件（文本段存 QLabel，代码段存 CodeBlockWidget）
+    QVector<QWidget *> m_streamWidgets;
+    QVector<bool> m_streamIsCode;
+
     AgentState m_state = AgentState::Idle;
     int m_snapshotCount = 0;
     QString m_modelInfo;

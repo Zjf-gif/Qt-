@@ -119,7 +119,7 @@ Copy-Item C:\qt-creator-4.15.0-build\lib\qtcreator\plugins\AiAssistant4.dll `
 
 1. 启动 Creator，首次会读 `ICore::settings()`（Windows 在
    `%APPDATA%\QtProject\qtcreator\`，可用 `-settingspath <dir>` 隔离）。
-2. 菜单 **Tools → AI 助手 → AI 助手面板**（`Ctrl+Alt+A`）应打开侧边 Dock；
+2. 菜单 **Tools → AI 助手 → AI 助手面板**（`Ctrl+Shift+A`）应打开侧边 Dock；
    若没有该菜单，说明插件未加载。
 3. 查看加载日志：Creator 启动时终端/调试输出会打印插件加载失败原因
    （缺依赖、ABI 不匹配、“not a Qt plugin” 等）。

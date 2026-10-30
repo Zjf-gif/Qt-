@@ -50,6 +50,8 @@ HEADERS += \
     $$PWD/tools/uitools.h \
     $$PWD/ui/aichatdock.h \
     $$PWD/ui/approvaldialog.h \
+    $$PWD/ui/chatinput.h \
+    $$PWD/ui/codeblockwidget.h \
     $$PWD/ui/diffview.h \
     $$PWD/ui/settingsdialog.h \
     $$PWD/ui/uipreviewwidget.h \
@@ -81,6 +83,8 @@ SOURCES += \
     $$PWD/tools/uitools.cpp \
     $$PWD/ui/aichatdock.cpp \
     $$PWD/ui/approvaldialog.cpp \
+    $$PWD/ui/chatinput.cpp \
+    $$PWD/ui/codeblockwidget.cpp \
     $$PWD/ui/diffview.cpp \
     $$PWD/ui/settingsdialog.cpp \
     $$PWD/ui/uipreviewwidget.cpp \

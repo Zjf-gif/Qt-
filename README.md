@@ -90,7 +90,7 @@ Copy-Item .\src  <qt-creator>\src\plugins\aiassistant -Recurse
 Copy-Item <build>\lib\qtcreator\plugins\AiAssistant4.dll `
           "<QtCreator>\lib\qtcreator\plugins\"
 
-# 5) 启动 Creator，打开 Tools → AI 助手 → AI 助手面板（Ctrl+Alt+A）
+# 5) 启动 Creator，打开 Tools → AI 助手 → AI 助手面板（Ctrl+Shift+A）
 ```
 
 详细步骤（含 Debug 联调、ABI 注意事项、可选 `-pluginpath` 加载）见
@@ -146,7 +146,7 @@ Copy-Item <build>\lib\qtcreator\plugins\AiAssistant4.dll `
 | 加载验证 | ① `QPluginLoader` 用**已装 Creator 的 DLL** 成功 `instance()`；② 启动已装 Creator 后用 UI Automation 在窗口里找到了 Dock「AI 助手」及其全部按钮（发送/停止Agent/手动快照/回滚/刷新项目上下文/打开设置/清空对话）与状态行「模型 … ｜ 快照 0 ｜ 审批：强制」 |
 
 > 也就是说：**你现在直接启动 `D:\Qt\Tools\QtCreator\bin\qtcreator.exe` 就能用**，
-> 菜单位置：`Tools → AI 助手 → AI 助手面板`（或 `Ctrl+Alt+A`）。
+> 菜单位置：`Tools → AI 助手 → AI 助手面板`（或 `Ctrl+Shift+A`）。
 
 ### 5.2 集成期修正的真实 SDK 差异（已全部合入源码）
 
